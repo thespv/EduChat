@@ -1,0 +1,21 @@
+{
+  "name": "educhat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Multimodal LLM-based RAG chatbot for education",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "python -m uvicorn api.index:app --host 0.0.0.0 --port 8000"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.10"
+  }
+}

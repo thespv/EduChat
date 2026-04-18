@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>EduChat | Sign In</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+      body { 
+        background: linear-gradient(135deg, #14284b 0%, #1e3b6e 100%); 
+        min-height: 100vh; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        margin: 0;
+        padding: 20px;
+      }
+      .auth-container { width: 100%; max-width: 400px; }
+      .auth-logo { text-align: center; margin-bottom: 32px; }
+      .auth-logo .logo-icon { font-size: 3rem; display: block; margin-bottom: 8px; }
+      .auth-logo h1 { color: white; font-size: 2rem; font-weight: 700; }
+      .auth-logo .ai-text { color: #10b981; }
+      
+      .modal-overlay { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+      .modal-overlay h2 { text-align: center; margin-bottom: 8px; color: #20242d; font-size: 1.5rem; }
+      .modal-subtitle { text-align: center; color: #6b7280; margin-bottom: 24px; font-size: 0.9rem; }
+      
+      .form-group { margin-bottom: 16px; }
+      .form-group label { display: block; margin-bottom: 6px; color: #374151; font-weight: 500; font-size: 0.9rem; }
+      .form-group input { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; outline: none; }
+      .form-group input:focus { border-color: #14284b; box-shadow: 0 0 0 3px rgba(20,40,75,0.1); }
+      
+      .forgot-password { text-align: right; margin-bottom: 16px; }
+      .forgot-password a { color: #10b981; text-decoration: none; font-size: 0.9rem; }
+      
+      .btn-primary { background: #14284b; color: white; border: none; padding: 14px 24px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 500; width: 100%; transition: background 0.2s; }
+      .btn-primary:hover { background: #1e3b6e; }
+      
+      .modal-footer-text { text-align: center; margin-top: 20px; color: #6b7280; font-size: 0.9rem; }
+      .modal-footer-text a { color: #10b981; text-decoration: none; font-weight: 500; }
+      .modal-footer-text a:hover { text-decoration: underline; }
+      
+      #signup-modal, #forgot-modal { display: none; }
+      
+      @media (max-width: 480px) {
+        body { padding: 15px; }
+        .modal-overlay { padding: 24px; }
+        .auth-logo h1 { font-size: 1.6rem; }
+        .auth-logo .logo-icon { font-size: 2.5rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="auth-container">
+      <div class="auth-logo">
+        <div class="logo-icon">📖</div>
+        <h1>EduChat <span class="ai-text">AI</span></h1>
+      </div>
+
+      <!-- Sign In Modal (visible by default) -->
+      <div class="modal-overlay" id="signin-modal" style="position: relative; background: white; border-radius: 16px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+        <h2 style="text-align: center; margin-bottom: 8px; color: #20242d;">Welcome Back</h2>
+        <p class="modal-subtitle" style="text-align: center; color: #6b7280; margin-bottom: 24px;">Sign in to continue your learning journey</p>
+        <form id="signin-form">
+          <div class="form-group">
+            <label for="signin-email">Email</label>
+            <input type="email" id="signin-email" required placeholder="you@university.edu">
+          </div>
+          <div class="form-group">
+            <label for="signin-password">Password</label>
+            <input type="password" id="signin-password" required placeholder="Enter your password">
+          </div>
+          <div class="forgot-password" style="text-align: right; margin-bottom: 16px;">
+            <a href="#" id="forgot-password-link" style="color: #10b981; text-decoration: none; font-size: 0.9rem;">Forgot Password?</a>
+          </div>
+          <button type="submit" class="btn-primary full-width" style="background: #14284b;">Sign In</button>
+        </form>
+        <p class="modal-footer-text" style="text-align: center; margin-top: 20px; color: #6b7280;">Don't have an account? <a href="#" id="switch-to-signup" style="color: #10b981; text-decoration: none; font-weight: 500;">Sign Up</a></p>
+      </div>
+
+      <!-- Sign Up Modal (hidden) -->
+      <div class="modal-overlay" id="signup-modal" style="display: none; position: relative; background: white; border-radius: 16px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+        <h2 style="text-align: center; margin-bottom: 8px; color: #20242d;">Create Account</h2>
+        <p class="modal-subtitle" style="text-align: center; color: #6b7280; margin-bottom: 24px;">Join EduChat and start mastering your subjects</p>
+        <form id="signup-form">
+          <div class="form-group">
+            <label for="signup-name">Full Name</label>
+            <input type="text" id="signup-name" required placeholder="Your full name">
+          </div>
+          <div class="form-group">
+            <label for="signup-email">Email</label>
+            <input type="email" id="signup-email" required placeholder="you@university.edu">
+          </div>
+          <div class="form-group">
+            <label for="signup-password">Password</label>
+            <input type="password" id="signup-password" required placeholder="Create a password" minlength="6">
+          </div>
+          <div class="form-group">
+            <label for="signup-confirm">Confirm Password</label>
+            <input type="password" id="signup-confirm" required placeholder="Confirm your password">
+          </div>
+          <button type="submit" class="btn-primary full-width" style="background: #14284b;">Create Account</button>
+        </form>
+        <p class="modal-footer-text" style="text-align: center; margin-top: 20px; color: #6b7280;">Already have an account? <a href="#" id="switch-to-signin" style="color: #10b981; text-decoration: none; font-weight: 500;">Sign In</a></p>
+      </div>
+
+      <!-- Forgot Password Modal (hidden) -->
+      <div class="modal-overlay" id="forgot-modal" style="display: none; position: relative; background: white; border-radius: 16px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+        <h2 style="text-align: center; margin-bottom: 8px; color: #20242d;">Reset Password</h2>
+        <p class="modal-subtitle" style="text-align: center; color: #6b7280; margin-bottom: 24px;">Enter your email to receive a password reset link</p>
+        <form id="forgot-form">
+          <div class="form-group">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" required placeholder="you@university.edu">
+          </div>
+          <button type="submit" class="btn-primary full-width" style="background: #14284b;">Send Reset Link</button>
+        </form>
+        <p class="modal-footer-text" style="text-align: center; margin-top: 20px; color: #6b7280;">Remember your password? <a href="#" id="back-to-signin" style="color: #10b981; text-decoration: none; font-weight: 500;">Sign In</a></p>
+      </div>
+    </div>
+
+    <script>
+      const user = JSON.parse(localStorage.getItem('educhat_user') || 'null');
+      if (user && user.name && user.email) {
+        window.location.href = 'chat.html';
+      }
+
+      const signinModal = document.getElementById('signin-modal');
+      const signupModal = document.getElementById('signup-modal');
+      const forgotModal = document.getElementById('forgot-modal');
+
+      document.getElementById('switch-to-signup').addEventListener('click', (e) => {
+        e.preventDefault();
+        signinModal.style.display = 'none';
+        signupModal.style.display = 'block';
+      });
+
+      document.getElementById('switch-to-signin').addEventListener('click', (e) => {
+        e.preventDefault();
+        signupModal.style.display = 'none';
+        signinModal.style.display = 'block';
+      });
+
+      document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        signinModal.style.display = 'none';
+        forgotModal.style.display = 'block';
+      });
+
+      document.getElementById('back-to-signin').addEventListener('click', (e) => {
+        e.preventDefault();
+        forgotModal.style.display = 'none';
+        signinModal.style.display = 'block';
+      });
+
+      document.getElementById('signin-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('signin-email').value;
+        const password = document.getElementById('signin-password').value;
+        
+        if (email && password) {
+          const storedUser = JSON.parse(localStorage.getItem('educhat_user') || 'null');
+          if (storedUser && storedUser.email === email) {
+            window.location.href = 'chat.html';
+          } else {
+            const now = new Date().toISOString();
+            localStorage.setItem('educhat_user', JSON.stringify({ name: email.split('@')[0], email: email, signedUp: now }));
+            localStorage.setItem('user_signed_up', now);
+            window.location.href = 'chat.html';
+          }
+        }
+      });
+
+      document.getElementById('signup-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('signup-name').value;
+        const email = document.getElementById('signup-email').value;
+        const password = document.getElementById('signup-password').value;
+        const confirm = document.getElementById('signup-confirm').value;
+        
+        if (password !== confirm) {
+          alert('Passwords do not match!');
+          return;
+        }
+        
+        const now = new Date().toISOString();
+        localStorage.setItem('educhat_user', JSON.stringify({ name: name, email: email, signedUp: now }));
+        localStorage.setItem('user_signed_up', now);
+        window.location.href = 'chat.html';
+      });
+
+      document.getElementById('forgot-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Password reset link sent to your email!');
+        forgotModal.style.display = 'none';
+        signinModal.style.display = 'block';
+      });
+    </script>
+  </body>
+</html>
