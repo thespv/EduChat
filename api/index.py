@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from api.database import (
     init_db, create_session, get_sessions, get_session, 
     add_message, update_session_title, delete_session,
-    save_lecture_note, get_lecture_notes, delete_lecture_note
+    save_lecture_note, get_lecture_notes, delete_lecture_note, get_lecture_note_by_id
 )
 
 # Load .env from project root (works locally and on production)
@@ -39,7 +39,7 @@ from api.services.langchain_service import (
     process_rag_query, 
     generate_quiz_with_rag,
     generate_flashcards_with_rag,
-    rag_system
+    get_rag_system
 )
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -93,12 +93,51 @@ async def chat_endpoint(
                         "error": "Video processing requires external storage. For now, please provide a video URL or extract audio."
                     }, status_code=400)
                 elif file.filename.endswith(".pdf"):
-                    b64_data = base64.b64encode(content).decode("utf-8")
-                    processed_files.append({
-                        "type": "pdf",
-                        "name": file.filename,
-                        "data": b64_data
-                    })
+                    text_content = ""
+                    extraction_method = "none"
+                    
+                    try:
+                        from pypdf import PdfReader
+                        from io import BytesIO
+                        pdf_file = BytesIO(content)
+                        reader = PdfReader(pdf_file)
+                        for page in reader.pages:
+                            text_content += page.extract_text() or ""
+                        if text_content.strip():
+                            extraction_method = "pypdf"
+                    except Exception as e:
+                        print(f"PDF pypdf error: {e}")
+                    
+                    if not text_content.strip():
+                        try:
+                            import pdfplumber
+                            from io import BytesIO
+                            with pdfplumber.open(BytesIO(content)) as pdf:
+                                for page in pdf.pages:
+                                    txt = page.extract_text()
+                                    if txt:
+                                        text_content += txt + "\n"
+                            if text_content.strip():
+                                extraction_method = "pdfplumber"
+                        except Exception as e:
+                            print(f"PDF pdfplumber error: {e}")
+                    
+                    print(f"=== PDF EXTRACT: {file.filename} using {extraction_method}, got {len(text_content)} chars ===")
+                    print(f"=== PDF SAMPLE: {repr(text_content[:300])} ===")
+                    
+                    if text_content.strip() and len(text_content) > 30:
+                        processed_files.append({
+                            "type": "text",
+                            "name": file.filename,
+                            "data": text_content
+                        })
+                    else:
+                        print(f"=== PDF FAILED: setting placeholder ===")
+                        processed_files.append({
+                            "type": "text",
+                            "name": file.filename,
+                            "data": f"[PDF file '{file.filename}' uploaded but text extraction failed - please provide the file as text/doc or use a different PDF]"
+                        })
                 elif file.filename.endswith((".txt", ".md")):
                     text_content = content.decode("utf-8", errors="ignore")
                     processed_files.append({
@@ -107,22 +146,60 @@ async def chat_endpoint(
                         "data": text_content
                     })
                 elif file.filename.endswith((".doc", ".docx")):
-                    b64_data = base64.b64encode(content).decode("utf-8")
-                    processed_files.append({
-                        "type": "doc",
-                        "name": file.filename,
-                        "data": b64_data
-                    })
+                    try:
+                        from docx import Document
+                        from io import BytesIO
+                        doc_file = BytesIO(content)
+                        doc = Document(doc_file)
+                        text_content = "\n".join([p.text for p in doc.paragraphs])
+                        processed_files.append({
+                            "type": "text",
+                            "name": file.filename,
+                            "data": text_content
+                        })
+                    except Exception as e:
+                        print(f"Error extracting docx text: {e}")
+                        text_content = f"[Could not extract text from {file.filename}]"
+                        processed_files.append({
+                            "type": "text",
+                            "name": file.filename,
+                            "data": text_content
+                        })
                 elif file.filename.endswith((".ppt", ".pptx")):
-                    b64_data = base64.b64encode(content).decode("utf-8")
-                    processed_files.append({
-                        "type": "pptx",
-                        "name": file.filename,
-                        "data": b64_data
-                    })
+                    try:
+                        from pptx import Presentation
+                        from io import BytesIO
+                        ppt_file = BytesIO(content)
+                        prs = Presentation(ppt_file)
+                        text_content = ""
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if shape.has_text_frame:
+                                    for para in shape.text_frame.paragraphs:
+                                        text_content += para.text + "\n"
+                        if text_content.strip():
+                            processed_files.append({
+                                "type": "text",
+                                "name": file.filename,
+                                "data": text_content
+                            })
+                        else:
+                            processed_files.append({
+                                "type": "text",
+                                "name": file.filename,
+                                "data": "[PowerPoint is empty]"
+                            })
+                    except Exception as e:
+                        print(f"Error extracting pptx text: {e}")
+                        text_content = f"[Could not extract text from {file.filename}]"
+                        processed_files.append({
+                            "type": "text",
+                            "name": file.filename,
+                            "data": text_content
+                        })
                 else:
                     processed_files.append({
-                        "type": "unknown",
+                        "type": "text",
                         "name": file.filename,
                         "data": content.decode("utf-8", errors="ignore")[:1000]
                     })
@@ -201,6 +278,17 @@ async def delete_chat_session(session_id: int):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+def clean_extracted_text(text: str) -> str:
+    import re
+    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+    text = re.sub(r'([a-z])\n([a-z])', r'\1 \2', text, flags=re.IGNORECASE)
+    text = re.sub(r' {2,}', ' ', text)
+    text = re.sub(r'\n ', '\n', text)
+    text = re.sub(r' \n', '\n', text)
+    text = re.sub(r'(\w)-\s+(\w)', r'\1\2', text)
+    text = text.strip()
+    return text
+
 @app.post("/api/extract-pdf")
 async def extract_pdf(content: str = Form(...), file_type: str = Form(default="pdf")):
     try:
@@ -221,15 +309,16 @@ async def extract_pdf(content: str = Form(...), file_type: str = Form(default="p
                 
                 for i, page in enumerate(reader.pages):
                     text = page.extract_text() or ""
+                    text = clean_extracted_text(text)
                     
                     page_data = {
                         "page_num": i + 1,
                         "total_pages": total_pages,
-                        "text": text[:8000],
+                        "text": text,
                         "extracted": True
                     }
                     yield f"data: {json.dumps(page_data)}\n\n"
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.1)
                 
                 yield f"data: {json.dumps({'done': True})}\n\n"
             
@@ -242,10 +331,12 @@ async def extract_pdf(content: str = Form(...), file_type: str = Form(default="p
             doc = Document(doc_file)
             
             text = "\n".join([para.text for para in doc.paragraphs])
+            text = clean_extracted_text(text)
             return {"pages": [{"page_num": 1, "text": text}], "total_pages": 1, "success": True}
         
         elif file_type == "txt" or file_type == "md":
             text = base64.b64decode(content).decode('utf-8', errors='ignore')
+            text = clean_extracted_text(text)
             return {"pages": [{"page_num": 1, "text": text}], "total_pages": 1, "success": True}
         
         elif file_type in ["ppt", "pptx"]:
@@ -257,13 +348,20 @@ async def extract_pdf(content: str = Form(...), file_type: str = Form(default="p
                 
                 text = ""
                 for slide_num, slide in enumerate(prs.slides, 1):
-                    slide_text = f"\n--- Slide {slide_num} ---\n"
+                    slide_text = f"\n=== Slide {slide_num} ===\n\n"
                     for shape in slide.shapes:
-                        if hasattr(shape, "text") and shape.text:
-                            slide_text += shape.text + "\n"
-                    text += slide_text
+                        if hasattr(shape, "text_frame"):
+                            for para in shape.text_frame.paragraphs:
+                                para_text = para.text.strip()
+                                if para_text:
+                                    slide_text += para_text + "\n"
+                        elif hasattr(shape, "text") and shape.text:
+                            slide_text += shape.text.strip() + "\n"
+                    if slide_text.strip():
+                        text += slide_text + "\n"
                 
-                return {"pages": [{"page_num": 1, "text": text[:50000]}], "total_pages": len(prs.slides), "success": True}
+                text = clean_extracted_text(text)
+                return {"pages": [{"page_num": 1, "text": text}], "total_pages": len(prs.slides), "success": True}
             except Exception as e:
                 return {"error": f"Failed to extract PowerPoint: {str(e)}"}
         
@@ -278,6 +376,140 @@ async def get_notes(user: str = "User"):
     try:
         notes = get_lecture_notes(user)
         return {"notes": notes}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/notes/{note_id}/content")
+async def get_note_content(note_id: int):
+    try:
+        from api.database import get_lecture_note_by_id
+        note = get_lecture_note_by_id(note_id)
+        if not note:
+            return JSONResponse({"error": "Note not found"}, status_code=404)
+        
+        import base64
+        from io import BytesIO
+        from fastapi.responses import StreamingResponse
+        import json
+        import asyncio
+        
+        content = note.get("content", "")
+        file_type = note.get("file_type", "")
+        name = note.get("name", "")
+        
+        print(f"Note ID: {note_id}, FileType: {file_type}, Content length: {len(content)}, Name: {name}")
+        
+        def try_decode_base64(s):
+            if not s:
+                return None
+            try:
+                decoded = base64.b64decode(s, validate=True)
+                return decoded
+            except:
+                return None
+        
+        decoded_content = try_decode_base64(content)
+        is_encoded = decoded_content is not None
+        print(f"Is encoded: {is_encoded}, Content preview: {content[:50] if content else 'empty'}")
+        
+        async def generate_extraction():
+            try:
+                # For non-encoded content (plain text), return directly
+                if not is_encoded:
+                    yield f"data: {json.dumps({'page_num': 1, 'total_pages': 1, 'text': content})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'note_name': name})}\n\n"
+                    return
+                
+                if file_type == "pdf":
+                    from pypdf import PdfReader
+                    pdf_bytes = decoded_content if is_encoded else content.encode()
+                    pdf_file = BytesIO(pdf_bytes)
+                    reader = PdfReader(pdf_file)
+                    total_pages = len(reader.pages)
+                    
+                    for i, page in enumerate(reader.pages):
+                        text = page.extract_text() or ""
+                        text = clean_extracted_text(text)
+                        page_text = f"\n\n---\n**Page {i + 1}**\n---\n\n{text}"
+                        
+                        page_data = {
+                            "page_num": i + 1,
+                            "total_pages": total_pages,
+                            "text": page_text,
+                            "extracted": True
+                        }
+                        yield f"data: {json.dumps(page_data)}\n\n"
+                        await asyncio.sleep(0.05)
+                    
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                elif file_type in ["doc", "docx"]:
+                    from docx import Document
+                    doc_bytes = decoded_content if is_encoded else content.encode()
+                    doc_file = BytesIO(doc_bytes)
+                    doc = Document(doc_file)
+                    
+                    text = "\n".join([para.text for para in doc.paragraphs])
+                    text = clean_extracted_text(text)
+                    
+                    page_data = {"page_num": 1, "total_pages": 1, "text": text, "extracted": True}
+                    yield f"data: {json.dumps(page_data)}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'note_name': name})}\n\n"
+                
+                elif file_type == "txt" or file_type == "md":
+                    if is_encoded:
+                        text = decoded_content.decode('utf-8', errors='ignore')
+                    else:
+                        text = content
+                    text = clean_extracted_text(text)
+                    
+                    page_data = {"page_num": 1, "total_pages": 1, "text": text, "extracted": True}
+                    yield f"data: {json.dumps(page_data)}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'note_name': name})}\n\n"
+                
+                elif file_type in ["ppt", "pptx"]:
+                    try:
+                        from pptx import Presentation
+                        doc_bytes = decoded_content if is_encoded else content.encode()
+                        doc_file = BytesIO(doc_bytes)
+                        prs = Presentation(doc_file)
+                        total_slides = len(prs.slides)
+                        
+                        for slide_num, slide in enumerate(prs.slides, 1):
+                            slide_text = f"\n=== Slide {slide_num} ===\n\n"
+                            for shape in slide.shapes:
+                                if hasattr(shape, "text_frame"):
+                                    for para in shape.text_frame.paragraphs:
+                                        para_text = para.text.strip()
+                                        if para_text:
+                                            slide_text += para_text + "\n"
+                                elif hasattr(shape, "text") and shape.text:
+                                    slide_text += shape.text.strip() + "\n"
+                            if slide_text.strip():
+                                text = clean_extracted_text(slide_text)
+                                page_data = {
+                                    "page_num": slide_num,
+                                    "total_pages": total_slides,
+                                    "text": text,
+                                    "extracted": True
+                                }
+                                yield f"data: {json.dumps(page_data)}\n\n"
+                                await asyncio.sleep(0.05)
+                        
+                        yield f"data: {json.dumps({'done': True, 'note_name': name})}\n\n"
+                    except Exception as e:
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                
+                else:
+                    yield f"data: {json.dumps({'error': 'Unsupported format'})}\n\n"
+                
+                yield f"data: {json.dumps({'done': True})}\n\n"
+            
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
+        return StreamingResponse(generate_extraction(), media_type="text/event-stream")
+    
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -377,10 +609,10 @@ async def ingest_document(
         
         if file.filename.endswith(".pdf"):
             pdf_bytes = base64.b64decode(b64_data)
-            success = rag_system.process_pdf(pdf_bytes, doc_name)
+            success = get_rag_system().process_pdf(pdf_bytes, doc_name)
         else:
             text = content.decode("utf-8", errors="ignore")
-            success = rag_system.process_text(text, doc_name)
+            success = get_rag_system().process_text(text, doc_name)
         
         if success:
             return {"success": True, "document": doc_name, "chunks": "created"}
@@ -395,8 +627,7 @@ async def search_documents(
     k: int = 3
 ):
     try:
-        from api.services.langchain_service import rag_system
-        results = rag_system.similarity_search(query, doc_name, k)
+        results = get_rag_system().similarity_search(query, doc_name, k)
         return {"results": results}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

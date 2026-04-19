@@ -15,7 +15,7 @@ google-genai==1.67.0
 # LangChain (for RAG and Chat Memory)
 langchain==0.3.13
 langchain-core==0.3.63
-langchain-google-genai>=0.2.0
+langchain-google-genai==2.0.11
 langchain-community==0.3.13
 langchain-text-splitters==0.3.8
 langchain-huggingface>=0.1.0

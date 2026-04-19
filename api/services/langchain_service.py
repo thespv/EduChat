@@ -10,42 +10,76 @@ load_dotenv(env_path)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 
+from api.services.api_manager import get_api_manager
+
 chat_memories: Dict[str, Any] = {}
 
 
 def get_langchain_llm():
-    """Get LangChain Gemini LLM with Groq fallback"""
+    """Get LangChain Gemini LLM with automatic fallback to other providers"""
     from langchain_google_genai import ChatGoogleGenerativeAI
     
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=GEMINI_API_KEY,
-        temperature=0.7,
-        convert_system_message_to_human=True
-    )
+    api_manager = get_api_manager()
+    gemini_key = api_manager.get_current_gemini_key()
     
-    groq_api_key = os.environ.get("GROQ_API_KEY", "")
-    if groq_api_key:
+    if not gemini_key:
+        return get_fallback_llm()
+    
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            google_api_key=gemini_key,
+            temperature=0.7,
+            convert_system_message_to_human=True
+        )
+        return llm.with_fallbacks([get_fallback_llm()])
+    except Exception as e:
+        print(f"Gemini LangChain init error: {e}")
+        return get_fallback_llm()
+
+
+def get_fallback_llm():
+    """Get fallback LLM from any available provider"""
+    api_manager = get_api_manager()
+    
+    if api_manager.groq_key:
         from langchain_groq import ChatGroq
-        fallback_llm = ChatGroq(
+        return ChatGroq(
             model="llama-3.3-70b-versatile",
-            api_key=groq_api_key,
+            api_key=api_manager.groq_key,
             temperature=0.7
         )
-        return llm.with_fallbacks([fallback_llm])
-        
-    return llm
+    elif api_manager.openrouter_key:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model="meta-llama/llama-3.3-70b-instruct",
+            api_key=api_manager.openrouter_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
+    elif api_manager.openai_key:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=api_manager.openai_key
+        )
+    
+    raise Exception("No fallback API available")
 
+
+_embeddings = None
 
 def get_embeddings():
-    """Get HuggingFace embeddings for RAG"""
-    from langchain_huggingface import HuggingFaceEmbeddings
-    
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={'device': 'cpu'}
-    )
-    return embeddings
+    """Get HuggingFace embeddings for RAG (Lazy Loaded)"""
+    global _embeddings
+    if _embeddings is None:
+        print("Initializing HuggingFace embeddings (this may take a few seconds on first use)...")
+        from langchain_huggingface import HuggingFaceEmbeddings
+        
+        _embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'}
+        )
+    return _embeddings
 
 
 class ChatMemoryManager:
@@ -91,16 +125,23 @@ class DocumentRAG:
     """RAG system for document processing"""
     
     def __init__(self):
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from langchain_community.vectorstores import FAISS
-        from langchain_huggingface import HuggingFaceEmbeddings
-        
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
-        self.embeddings = get_embeddings()
+        self._text_splitter = None
+        self._embeddings = None
         self.vector_stores: Dict[str, Any] = {}
+
+    @property
+    def text_splitter(self):
+        if self._text_splitter is None:
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+            self._text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200
+            )
+        return self._text_splitter
+
+    @property
+    def embeddings(self):
+        return get_embeddings()
     
     def process_pdf(self, pdf_content: bytes, doc_name: str) -> bool:
         """Process PDF and create embeddings"""
@@ -132,6 +173,7 @@ class DocumentRAG:
             if not chunks:
                 return False
             
+            from langchain_community.vectorstores import FAISS
             vectorstore = FAISS.from_texts(chunks, self.embeddings)
             self.vector_stores[doc_name] = vectorstore
             return True
@@ -166,7 +208,14 @@ class DocumentRAG:
         return None
 
 
-rag_system = DocumentRAG()
+_rag_system = None
+
+def get_rag_system():
+    """Get or create singleton RAG system (Lazy Loaded)"""
+    global _rag_system
+    if _rag_system is None:
+        _rag_system = DocumentRAG()
+    return _rag_system
 
 
 async def process_rag_query(
@@ -178,69 +227,73 @@ async def process_rag_query(
     """Process query with RAG and Chat Memory"""
     from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
     from langchain_core.runnables import RunnablePassthrough
-    from langchain_google_genai import ChatGoogleGenerativeAI
     
+    api_manager = get_api_manager()
     memory = get_chat_memory(user, session_id)
     memory.add_message("user", message)
     
     context = ""
+    print(f"RAG DEBUG: Processing {len(files) if files else 0} files")
     if files and len(files) > 0:
         for file in files:
             file_type = file.get("type", "")
             file_data = file.get("data", "")
             file_name = file.get("name", "document")
+            print(f"RAG DEBUG: File type={file_type}, name={file_name}, data_len={len(file_data) if file_data else 0}")
             
             import base64
             from io import BytesIO
             
-            if file_type == "pdf":
+            if file_type in ("text", "pdf", "doc", "pptx"):
                 try:
-                    pdf_bytes = base64.b64decode(file_data)
-                    if rag_system.process_pdf(pdf_bytes, file_name):
-                        context = "\n\n".join(rag_system.similarity_search(message, file_name, k=2))
+                    text_data = file_data if file_data else file.get("data", "")
+                    
+                    print(f"RAG DEBUG: Processing {file_type} {file_name}, text_len={len(text_data) if text_data else 0}")
+                    print(f"RAG DEBUG: Sample text: {repr(text_data[:200])}")
+                    
+                    if text_data and len(text_data) > 10:
+                        context = text_data
+                        print(f"RAG DEBUG: Using full extracted text directly")
                 except Exception as e:
-                    print(f"Error processing PDF: {e}")
-            
-            elif file_type == "text":
-                try:
-                    text_data = base64.b64decode(file_data).decode() if file_data else file.get("data", "")
-                    if text_data and rag_system.process_text(text_data, file_name):
-                        context = "\n\n".join(rag_system.similarity_search(message, file_name, k=2))
-                except Exception as e:
-                    print(f"Error processing text: {e}")
+                    print(f"Error processing document: {e}")
     
     history = memory.get_conversation_history()
     
-    llm = get_langchain_llm()
+    if context:
+        system_msg = f"""You are EduChat, an AI tutor. A document has been uploaded. Use the following document content to answer the user's question:
+
+DOCUMENT CONTENT:
+{context}
+
+Provide a detailed answer based on the document content above. Be helpful and educational."""
+    else:
+        system_msg = """You are EduChat, an AI tutor specialized in helping students learn.
+Provide helpful, educational responses. Use conversation history for context."""
     
     if context:
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are EduChat, an AI tutor. Use the provided context from documents to answer.
-If context is relevant, cite it in your answer.
-Be helpful and educational."""),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{input}")
-        ])
+        full_prompt = f"""{system_msg}
+
+CONVERSATION HISTORY:
+{history}
+
+User Question: {message}
+
+Answer:"""
     else:
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are EduChat, an AI tutor specialized in helping students learn.
-Provide helpful, educational responses. Use conversation history for context."""),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{input}")
-        ])
-    
-    chain = (
-        {"input": RunnablePassthrough(), "history": lambda x: history}
-        | prompt
-        | llm
-    )
+        full_prompt = f"""{system_msg}
+
+CONVERSATION HISTORY:
+{history}
+
+User Question: {message}
+
+Answer:"""
     
     try:
-        response = chain.invoke(message)
-        answer = response.content if hasattr(response, 'content') else str(response)
+        answer = await api_manager.call_with_fallback(full_prompt, "")
     except Exception as e:
-        print(f"LangChain error: {e}")
-        answer = f"I encountered an error: {str(e)}"
+        print(f"Error getting response: {e}")
+        answer = "I apologize, but I encountered an error processing your document. Please try again."
     
     memory.add_message("assistant", answer)
     return answer
@@ -255,15 +308,30 @@ async def generate_quiz_with_rag(
 ) -> str:
     """Generate quiz using LangChain with context"""
     from langchain_core.prompts import ChatPromptTemplate
-    from langchain_google_genai import ChatGoogleGenerativeAI
     
+    api_manager = get_api_manager()
     memory = get_chat_memory(user, session_id)
     history = memory.get_conversation_history()
     
-    llm = get_langchain_llm()
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""You are an expert quiz generator. Create a {difficulty} quiz with {num_questions} multiple choice questions about the given topic.
+    prompt_text = f"""You are an expert quiz generator. Create a {difficulty} quiz with {num_questions} multiple choice questions about the given topic.
+Format each question as:
+Q1) [question]
+A) [option1]
+B) [option2]  
+C) [option3]
+D) [option4]
+Answer: [correct answer letter]
+
+Provide educational questions that test understanding, not just memorization.
+
+Topic: {topic}
+
+Generate the quiz now."""
+
+    try:
+        llm = get_langchain_llm()
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", f"""You are an expert quiz generator. Create a {difficulty} quiz with {num_questions} multiple choice questions about the given topic.
 Format each question as:
 Q1) [question]
 A) [option1]
@@ -273,17 +341,15 @@ D) [option4]
 Answer: [correct answer letter]
 
 Provide educational questions that test understanding, not just memorization."""),
-        ("human", f"Topic: {topic}\n\nGenerate the quiz now.")
-    ])
-    
-    chain = prompt | llm
-    
-    try:
-        response = chain.invoke({})
+            ("human", "Topic: {topic}")
+        ])
+        
+        chain = prompt | llm
+        response = chain.invoke({"topic": topic})
         answer = response.content if hasattr(response, 'content') else str(response)
     except Exception as e:
         print(f"Quiz generation error: {e}")
-        answer = f"Error generating quiz: {str(e)}"
+        answer = await api_manager.call_with_fallback(prompt_text, history)
     
     return answer
 
@@ -296,27 +362,37 @@ async def generate_flashcards_with_rag(
 ) -> str:
     """Generate flashcards using LangChain"""
     from langchain_core.prompts import ChatPromptTemplate
-    from langchain_google_genai import ChatGoogleGenerativeAI
     
-    llm = get_langchain_llm()
+    api_manager = get_api_manager()
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""You are an expert educator. Create {num_cards} flashcards about the given topic.
+    prompt_text = f"""You are an expert educator. Create {num_cards} flashcards about the given topic.
+Format each card as:
+Q: [question]
+A: [answer]
+
+Make questions that test understanding. Answers should be concise but complete.
+
+Topic: {topic}
+
+Generate flashcards now."""
+
+    try:
+        llm = get_langchain_llm()
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", f"""You are an expert educator. Create {num_cards} flashcards about the given topic.
 Format each card as:
 Q: [question]
 A: [answer]
 
 Make questions that test understanding. Answers should be concise but complete."""),
-        ("human", f"Topic: {topic}\n\nGenerate flashcards now.")
-    ])
-    
-    chain = prompt | llm
-    
-    try:
-        response = chain.invoke({})
+            ("human", "Topic: {topic}")
+        ])
+        
+        chain = prompt | llm
+        response = chain.invoke({"topic": topic})
         answer = response.content if hasattr(response, 'content') else str(response)
     except Exception as e:
         print(f"Flashcard generation error: {e}")
-        answer = f"Error generating flashcards: {str(e)}"
+        answer = await api_manager.call_with_fallback(prompt_text, "")
     
     return answer

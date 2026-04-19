@@ -114,6 +114,12 @@ function parseMarkdown(text) {
             continue;
         }
 
+        // Horizontal rule separator
+        if (line.trim() === '---') {
+            html += '<hr>';
+            continue;
+        }
+
         // Close any open list if we hit a non-list line
         if (inUl) { html += '</ul>'; inUl = false; }
         if (inOl) { html += '</ol>'; inOl = false; }
@@ -137,6 +143,40 @@ function parseMarkdown(text) {
     });
 
     return html;
+}
+
+// Helper to fetch full extracted text for a note using streaming endpoint
+async function fetchNoteFullText(noteId) {
+    try {
+        const response = await fetch(API_BASE + '/api/notes/' + noteId + '/content');
+        if (!response.ok) return '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let fullText = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let eol;
+            while ((eol = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.substring(0, eol).trim();
+                buffer = buffer.substring(eol + 1);
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.slice(6).trim();
+                    if (!jsonStr || jsonStr === '{"done":true}' || jsonStr === '{"done": true}') continue;
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        if (data.text) fullText += (fullText ? '\n\n' : '') + data.text;
+                    } catch (e) {}
+                }
+            }
+        }
+        return fullText;
+    } catch (e) {
+        console.error('Failed to fetch note content', noteId, e);
+        return '';
+    }
 }
 
 async function loadChatHistory() {
@@ -373,6 +413,7 @@ document.querySelector('#app').innerHTML = `
         
         <div class="main-content">
             <aside class="left-sidebar">
+                <button class="sidebar-close-btn" id="left-sidebar-close" title="Close menu">&times;</button>
                 <!-- Chat History Section -->
                 <div style="padding: 16px 20px; border-bottom: 1px solid #e5e7eb;">
                     <h3 style="font-size: 0.75rem; text-transform: uppercase; color: #6b7280; letter-spacing: 1px;">Chat History</h3>
@@ -432,6 +473,7 @@ document.querySelector('#app').innerHTML = `
                 
                 <!-- Right Sidebar - Quick Tools -->
                 <div class="quick-tools-sidebar" style="width: 280px; background: white; padding: 24px; display: flex; flex-direction: column; gap: 16px; margin: 16px 16px 16px 0; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                    <button class="sidebar-close-btn" id="right-sidebar-close" title="Close tools">&times;</button>
                     <h3 style="font-size: 0.85rem; text-transform: uppercase; font-weight: 600; color: #374151; letter-spacing: 1px; margin-bottom: 8px;">Quick Tools</h3>
                     
                     <button class="tool-btn" id="quick-flashcard" style="padding: 10px; background: white; border: 1px solid #e5e7eb; border-radius: 20px; cursor: pointer; text-align: center; font-weight: 500; font-size: 0.9rem; color: #374151;">
@@ -467,29 +509,36 @@ const searchToggleMobile = document.getElementById('search-toggle-mobile');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
 const leftSidebar = document.querySelector('.left-sidebar');
 const rightSidebar = document.querySelector('.quick-tools-sidebar');
+const rightSidebarContainer = document.querySelector('.right-sidebar');
 const searchSection = document.querySelector('.search-section');
 
 function toggleLeftSidebar() {
     leftSidebar.classList.toggle('active');
     sidebarOverlay.classList.toggle('active');
-    rightSidebar.classList.remove('active'); // Close other sidebar
+    rightSidebar.classList.remove('active');
+    rightSidebarContainer.classList.remove('tools-active'); // Ensure tools closed
 }
 
 function toggleRightSidebar() {
     rightSidebar.classList.toggle('active');
     sidebarOverlay.classList.toggle('active');
-    leftSidebar.classList.remove('active'); // Close other sidebar
+    leftSidebar.classList.remove('active');
+    rightSidebarContainer.classList.toggle('tools-active');
 }
 
 function closeAllSidebars() {
     leftSidebar.classList.remove('active');
     rightSidebar.classList.remove('active');
     sidebarOverlay.classList.remove('active');
+    rightSidebarContainer.classList.remove('tools-active');
 }
 
 sidebarToggle?.addEventListener('click', toggleLeftSidebar);
 toolsToggle?.addEventListener('click', toggleRightSidebar);
 sidebarOverlay?.addEventListener('click', closeAllSidebars);
+
+document.getElementById('left-sidebar-close')?.addEventListener('click', closeAllSidebars);
+document.getElementById('right-sidebar-close')?.addEventListener('click', closeAllSidebars);
 
 searchToggleMobile?.addEventListener('click', () => {
     searchSection.classList.toggle('mobile-visible');
@@ -501,6 +550,45 @@ document.querySelectorAll('.menu-item, .chat-history-item').forEach(item => {
         if (window.innerWidth <= 768) closeAllSidebars();
     });
 });
+
+// More robust responsive handling
+function handleResize() {
+    const width = window.innerWidth;
+    
+    // Close sidebars on resize to large screens
+    if (width > 1024) {
+        closeAllSidebars();
+        searchSection.classList.remove('mobile-visible');
+    }
+    
+    // Update chat title based on screen
+    const chatTitle = document.getElementById('chat-title');
+    if (chatTitle) {
+        if (width <= 400) {
+            chatTitle.style.maxWidth = '180px';
+        } else if (width <= 600) {
+            chatTitle.style.maxWidth = '220px';
+        } else {
+            chatTitle.style.maxWidth = '';
+        }
+    }
+}
+
+// Handle window resize
+window.addEventListener('resize', handleResize);
+handleResize();
+
+// Handle orientation change for mobile
+window.addEventListener('orientationchange', () => {
+    setTimeout(handleResize, 100);
+});
+
+// Prevent accidental back swipe on mobile
+document.addEventListener('touchmove', (e) => {
+    if (e.target.closest('.left-sidebar.active')) {
+        // Allow scroll in sidebar
+    }
+}, { passive: true });
 const sendBtn = document.getElementById('send-btn');
 const messagesContainer = document.getElementById('messages-container');
 const newChatBtn = document.getElementById('new-chat-btn');
@@ -625,7 +713,10 @@ document.getElementById('quick-summarize')?.addEventListener('click', async () =
                     showToolModal('Summary', '<p class="tool-intro">No lecture notes to summarize.</p>');
                     return;
                 }
-                notes.forEach(note => { textToSummarize += note.content + '\n---\n'; });
+                for (const note of notes) {
+                const extracted = await fetchNoteFullText(note.id);
+                textToSummarize += extracted + '\n---\n';
+            }
             } catch (e) {
                 showToolModal('Error', '<p>Could not load notes.</p>');
                 return;
@@ -712,7 +803,27 @@ attachFromNotesBtn?.addEventListener('click', async () => {
             const name = cb.dataset.name;
             const content = decodeURIComponent(cb.dataset.content);
             const fileType = cb.dataset.type;
-            const fileObj = { name, size: content.length, type: fileType, file: new File([content], name, { type: fileType }), icon: '📄' };
+            let fileData;
+            // Try to decode base64 content (new storage format)
+            try {
+                const binaryString = atob(content);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                fileData = bytes;
+            } catch (e) {
+                // Fallback: treat as plain text (old notes with extracted text)
+                fileData = content;
+            }
+            const fileObj = {
+                name,
+                size: fileData.length,
+                type: fileType,
+                file: new File([fileData], name, { type: fileType }),
+                icon: '📄'
+            };
             attachedFiles.push(fileObj);
         });
         renderAllAttachments();
@@ -750,6 +861,8 @@ if (voiceBtn && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in w
 async function sendMessage() {
     const message = chatInput.value.trim();
     if (message === '' && attachedFiles.length === 0) return;
+    
+    const isNewChat = newChatMode;
     
     const userAttachments = attachedFiles.map(f => ({
         name: f.name,
@@ -804,7 +917,7 @@ async function sendMessage() {
         
         if (data.reply) {
             addMessage(data.reply, false);
-            if (currentSessionId && message) {
+            if (currentSessionId && message && isNewChat) {
                 const title = message.split(' ').slice(0, 4).join(' ');
                 const shortTitle = title.length > 25 ? title.substring(0, 25) + '...' : title;
                 fetch(API_BASE + '/api/chat/session/' + currentSessionId, {
@@ -888,12 +1001,11 @@ function loadLectureNotes() {
                 }
                 
                 showToast('Uploading note...', 'info');
-                document.getElementById('notes-list').innerHTML = '<div class="tool-loading">Extracting document...</div>';
+                document.getElementById('notes-list').innerHTML = '<div class="tool-loading">Processing document...</div>';
                 
                 try {
                     const reader = new FileReader();
                     reader.onload = async (event) => {
-                        let formData = new FormData();
                         let b64Content = "";
                         if (fileType === 'txt' || fileType === 'md') {
                             b64Content = btoa(unescape(encodeURIComponent(event.target.result)));
@@ -901,72 +1013,38 @@ function loadLectureNotes() {
                             b64Content = event.target.result.split(',')[1];
                         }
                         
-                        formData.append('content', b64Content);
-                        formData.append('file_type', fileType);
-                        
-                        const extractResponse = await fetch(API_BASE + '/api/extract-pdf', {
-                            method: 'POST',
-                            body: formData
-                        });
-                        
-                        let extractedText = "";
-                        if (fileType === 'pdf') {
-                            const readerStream = extractResponse.body.getReader();
-                            const decoder = new TextDecoder("utf-8");
-                            while (true) {
-                                const { done, value } = await readerStream.read();
-                                if (done) break;
-                                const chunk = decoder.decode(value, { stream: true });
-                                const lines = chunk.split('\n\n');
-                                for (let line of lines) {
-                                    if (line.startsWith('data: ')) {
-                                        const jsonStr = line.substring(6);
-                                        if (jsonStr.trim() && jsonStr !== '{"done": true}') {
-                                            const data = JSON.parse(jsonStr);
-                                            if (data.text) extractedText += data.text + "\n";
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            const data = await extractResponse.json();
-                            if (data.pages && data.pages.length > 0) {
-                                extractedText = data.pages[0].text;
-                            }
-                        }
-                        
-                        if (extractedText) {
+                        if (b64Content) {
                             const saveForm = new FormData();
                             saveForm.append('user', user.name);
                             saveForm.append('name', file.name);
-                            saveForm.append('content', extractedText);
+                            saveForm.append('content', b64Content);
                             saveForm.append('file_type', fileType);
                             
-                            await fetch(API_BASE + '/api/notes', { method: 'POST', body: saveForm });
-                            showToast('Upload complete!', 'success');
-                        } else {
-                            showToast('No readable text could be extracted', 'error');
-                        }
-                        
-                        loadLectureNotes();
-                    };
-                    
-                    if (fileType === 'txt' || fileType === 'md') {
-                        reader.readAsText(file);
-                    } else {
-                        reader.readAsDataURL(file);
-                    }
-                } catch (e) {
-                    showToast('Upload failed: ' + e.message, 'error');
-                    loadLectureNotes();
-                }
-            });
-        }
-        
-        const container = document.getElementById('notes-list');
-        if (!container) return;
-        
-        fetch(API_BASE + '/api/notes?user=' + encodeURIComponent(user.name))
+await fetch(API_BASE + '/api/notes', { method: 'POST', body: saveForm });
+                             showToast('Upload complete! File will be extracted when you view it.', 'success');
+                         } else {
+                             showToast('Upload failed', 'error');
+                         }
+                         
+                         loadLectureNotes();
+                     };
+                     
+                     if (fileType === 'txt' || fileType === 'md') {
+                         reader.readAsText(file);
+                     } else {
+                         reader.readAsDataURL(file);
+                     }
+                 } catch (e) {
+                     showToast('Upload failed: ' + e.message, 'error');
+                     loadLectureNotes();
+                 }
+             });
+         }
+         
+         const container = document.getElementById('notes-list');
+         if (!container) return;
+         
+         fetch(API_BASE + '/api/notes?user=' + encodeURIComponent(user.name))
             .then(res => res.json())
             .then(data => {
                 const notes = data.notes || [];
@@ -984,30 +1062,105 @@ function loadLectureNotes() {
                     </div>
                 `).join('');
                 
-                container.querySelectorAll('.view-note-btn').forEach(btn => {
-                    btn.addEventListener('click', () => {
+container.querySelectorAll('.view-note-btn').forEach(btn => {
+                    btn.addEventListener('click', async () => {
                         const noteId = btn.dataset.id;
                         const note = notes.find(n => n.id == noteId);
-                        const content = note ? note.content : '';
-                        const name = note ? note.name : '';
-                        const fileType = note ? note.file_type : '';
+                        if (!note) return;
                         
-                        let formattedContent = content;
-                        if (fileType === 'pdf' || fileType === 'doc' || fileType === 'docx') {
-                            formattedContent = content.split('\n').map(line => line.trim()).filter(line => line).join('\n\n');
-                        }
-                        
-                        const displayContent = parseMarkdown(formattedContent || 'No text content available.');
+                        const name = note.name;
+                        const fileType = note.file_type;
                         
                         showToolModal('View Note: ' + name, `
                             <div class="note-viewer" style="max-height: 60vh; overflow-y: auto; background: #fafafa; padding: 20px; border-radius: 8px; border: 1px solid #e5e7eb;">
-                                <div class="note-text" style="color: #374151; font-family: inherit; font-size: 0.95rem; line-height: 1.8; word-wrap: break-word; white-space: pre-wrap;">${displayContent}</div>
+                                <div id="note-content-area" style="color: #374151; font-family: inherit; font-size: 0.95rem; line-height: 1.8; word-wrap: break-word; white-space: pre-wrap;">Loading...</div>
                             </div>
                             <div style="display: flex; gap: 8px; margin-top: 16px;">
                                 <button id="back-to-notes-btn" class="btn-primary" style="flex: 1;">Back to Notes</button>
                                 <button id="copy-note-btn" class="btn-secondary" style="flex: 1;">Copy Text</button>
                             </div>
                         `);
+                        
+                        const contentArea = document.getElementById('note-content-area');
+                        let extractedChunks = [];
+                        let pageMarkers = [];
+                        
+                        try {
+                            const response = await fetch(API_BASE + '/api/notes/' + noteId + '/content');
+                            if (!response.ok) {
+                                contentArea.innerHTML = note.content ? parseMarkdown(note.content) : 'Error loading note';
+                                return;
+                            }
+                            
+                            const reader = response.body.getReader();
+                            const decoder = new TextDecoder("utf-8");
+                            let buffer = '';
+                            
+                            function processLine(line) {
+                                if (!line.startsWith('data: ')) return;
+                                const jsonStr = line.slice(6).trim();
+                                if (!jsonStr || jsonStr === '{"done":true}' || jsonStr === '{"done": true}') {
+                                    if (jsonStr === '{"done":true}' || jsonStr === '{"done": true}') {
+                                        updateDisplay(contentArea, extractedChunks, pageMarkers, fileType, true);
+                                    }
+                                    return;
+                                }
+                                
+                                try {
+                                    const data = JSON.parse(jsonStr);
+                                    if (data.text && !data.done) {
+                                        extractedChunks.push(data.text);
+                                        if (fileType === 'ppt' || fileType === 'pptx') {
+                                            pageMarkers.push(`=== Slide ${data.page_num} ===`);
+                                        } else if (data.total_pages > 1) {
+                                            pageMarkers.push(`--- Page ${data.page_num} ---`);
+                                        }
+                                        updateDisplay(contentArea, extractedChunks, pageMarkers, fileType, false);
+                                    }
+                                } catch (e) {}
+                            }
+                            
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) {
+                                    if (buffer.trim()) {
+                                        processLine(buffer.trim());
+                                    }
+                                    break;
+                                }
+                                
+                                buffer += decoder.decode(value, { stream: true });
+                                let eol;
+                                while ((eol = buffer.indexOf('\n')) >= 0) {
+                                    const line = buffer.substring(0, eol).trim();
+                                    buffer = buffer.substring(eol + 1);
+                                    if (line) processLine(line);
+                                }
+                            }
+                        } catch (err) {
+                            contentArea.textContent = 'Error: ' + err.message;
+                        }
+                        
+                        function updateDisplay(area, chunks, markers, type, done) {
+                            let text = chunks.join('\n\n');
+                            let html = '';
+                            
+                            if (type === 'ppt' || type === 'pptx') {
+                                html = parseMarkdown(text.replace(/=== Slide (\d+) ===/g, '\n\n## Slide $1\n\n'));
+                            } else if (type === 'pdf' || type === 'doc' || type === 'docx') {
+                                html = parseMarkdown(text.replace(/\n{3,}/g, '\n\n').replace(/([a-z])\n([a-z])/gi, '$1 $2'));
+                            } else {
+                                html = parseMarkdown(text);
+                            }
+                            
+                            if (done && markers.length > 0) {
+                                html += '<div style="margin-top: 24px; padding-top: 12px; border-top: 2px solid #e5e7eb; color: #6b7280; font-size: 0.85rem;">' + 
+                                        `Total pages/slides: ${markers.length}` + 
+                                        '</div>';
+                            }
+                            
+                            area.innerHTML = html;
+                        }
                         
                         setTimeout(() => {
                             const backBtn = document.getElementById('back-to-notes-btn');
@@ -1016,8 +1169,9 @@ function loadLectureNotes() {
                             }
                             const copyBtn = document.getElementById('copy-note-btn');
                             if (copyBtn) {
+                                const fullText = extractedChunks.join('\n\n');
                                 copyBtn.addEventListener('click', () => {
-                                    navigator.clipboard.writeText(content).then(() => {
+                                    navigator.clipboard.writeText(fullText || note.content || '').then(() => {
                                         showToast('Copied to clipboard!', 'success');
                                     });
                                 });
@@ -1433,6 +1587,7 @@ function parseQuiz(text) {
     let currentQ = '';
     let options = [];
     let correctAnswer = '';
+    let correctIndex = -1;
     
     for (let line of lines) {
         line = line.trim();
@@ -1440,24 +1595,42 @@ function parseQuiz(text) {
         
         if (line.match(/^Q\d+[\):]/)) {
             if (currentQ && options.length > 0) {
-                questions.push({ question: currentQ, options: options.slice(0, 4), correctAnswer: correctAnswer });
+                questions.push({ question: currentQ, options: options.slice(0, 4), correctAnswer: correctAnswer, correctIndex: correctIndex });
             }
             currentQ = line.replace(/^Q\d+[\):]\s*/, '').trim();
             options = [];
             correctAnswer = '';
+            correctIndex = -1;
         } else if (line.match(/^[A-D]\)/i)) {
             const optionText = line.replace(/^[A-D]\)\s*/, '').trim();
-            options.push(optionText);
-            if (line.toLowerCase().startsWith('correct') || line.includes('[correct]') || line.includes('*')) {
-                correctAnswer = optionText;
+            const letterMatch = line.match(/^([A-D])\)/i);
+            if (letterMatch) {
+                const letter = letterMatch[1].toUpperCase();
+                options.push(letter + ') ' + optionText);
+                if (line.toLowerCase().includes('[correct]') || line.includes('*') || letterMatch.index === 0) {
+                    correctAnswer = letter + ') ' + optionText;
+                    correctIndex = options.length - 1;
+                }
+            } else {
+                options.push(optionText);
             }
         } else if (line.toLowerCase().startsWith('answer:') || line.toLowerCase().startsWith('correct answer:')) {
-            correctAnswer = line.replace(/^(answer:|correct answer:)\s*/i, '').trim();
+            const answerStr = line.replace(/^(answer:|correct answer:)\s*/i, '').trim().toUpperCase();
+            const letterMatch = answerStr.match(/^([A-D])/);
+            if (letterMatch) {
+                const letter = letterMatch[1];
+                correctAnswer = letter;
+                const idx = letter.charCodeAt(0) - 65;
+                if (idx >= 0 && idx < options.length) {
+                    correctIndex = idx;
+                    correctAnswer = options[idx];
+                }
+            }
         }
     }
     
     if (currentQ && options.length > 0) {
-        questions.push({ question: currentQ, options: options.slice(0, 4), correctAnswer: correctAnswer });
+        questions.push({ question: currentQ, options: options.slice(0, 4), correctAnswer: correctAnswer, correctIndex: correctIndex });
     }
     
     return questions;
@@ -1479,7 +1652,7 @@ function displayQuiz(quiz) {
                             ${q.options.map((opt, j) => `
                                 <label class="option-label" id="option-${i}-${j}">
                                     <input type="radio" name="q${i}" value="${j}" data-option="${opt}" />
-                                    <span class="option-text">${String.fromCharCode(65 + j)}) ${opt}</span>
+                                    <span class="option-text">${opt}</span>
                                 </label>
                             `).join('')}
                         </div>
@@ -1501,18 +1674,13 @@ function displayQuiz(quiz) {
         for (let i = 0; i < quiz.length; i++) {
             const q = quiz[i];
             const selected = document.querySelector('input[name="q' + i + '"]:checked');
-            const selectedValue = selected ? selected.value : -1;
+            const selectedValue = selected ? parseInt(selected.value) : -1;
             let isCorrect = false;
             let status = 'unanswered';
             
             if (selected) {
                 answered++;
-                let selOpt = selected.getAttribute('data-option');
-                let selLower = selOpt.toLowerCase().trim();
-                let corrText = q.correctAnswer.toLowerCase().trim();
-                let selShort = selLower.split(')')[0].trim();
-                let corrShort = corrText.split(')')[0].trim();
-                isCorrect = (selShort === corrShort) || (corrText.indexOf(selLower) >= 0);
+                isCorrect = (selectedValue === q.correctIndex);
                 
                 if (isCorrect) {
                     correct++;
@@ -1526,12 +1694,8 @@ function displayQuiz(quiz) {
             let optionHtml = '';
             for (let j = 0; j < q.options.length; j++) {
                 let opt = q.options[j];
-                let optLower = opt.toLowerCase().trim();
-                let corrText = q.correctAnswer ? q.correctAnswer.toLowerCase().trim() : '';
-                let optShort = optLower.split(')')[0].trim();
-                let corrShort = corrText.split(')')[0].trim();
-                let isThisCorrect = (optShort === corrShort) || (corrText.indexOf(optLower) >= 0);
-                let isUserSelected = (String(selectedValue) == String(j));
+                let isThisCorrect = (j === q.correctIndex);
+                let isUserSelected = (selectedValue === j);
                 
                 let optClass = '';
                 let optLabel = '';

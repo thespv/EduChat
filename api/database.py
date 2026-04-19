@@ -343,6 +343,34 @@ def get_lecture_notes(user: str) -> list:
         return get_lecture_notes_pg(user)
     return get_lecture_notes_sqlite(user)
 
+def get_lecture_note_by_id(note_id: int) -> dict:
+    if SUPABASE_URL and SUPABASE_KEY:
+        return get_lecture_note_by_id_pg(note_id)
+    return get_lecture_note_by_id_sqlite(note_id)
+
+def get_lecture_note_by_id_sqlite(note_id: int) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, content, file_type, created_at FROM lecture_notes WHERE id = ?", (note_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if r:
+        return {"id": r[0], "name": r[1], "content": r[2], "file_type": r[3], "created_at": r[4]}
+    return None
+
+def get_lecture_note_by_id_pg(note_id: int) -> dict:
+    conn = get_pg_connection()
+    if not conn:
+        return get_lecture_note_by_id_sqlite(note_id)
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, content, file_type, created_at FROM lecture_notes WHERE id = %s", (note_id,))
+    r = cursor.fetchone()
+    cursor.close()
+    if r:
+        return {"id": r[0], "name": r[1], "content": r[2], "file_type": r[3], "created_at": str(r[4])}
+    return None
+
 def get_lecture_notes_sqlite(user: str) -> list:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

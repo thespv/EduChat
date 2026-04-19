@@ -1,5 +1,10 @@
 # Logs
 logs
+
+# IDE/Tool-specific folders
+.kilo/
+.kilocode/
+.vscode/
 *.log
 npm-debug.log*
 yarn-debug.log*

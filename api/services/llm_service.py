@@ -7,157 +7,9 @@ from pathlib import Path
 env_path = Path("C:/Users/SAURAV/OneDrive/Desktop/EduChat/.env")
 load_dotenv(env_path)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-
-llm = None
+from api.services.api_manager import get_api_manager
 
 conversation_history: Dict[str, List[Dict]] = {}
-
-
-def set_api_key(api_key: str):
-    global GEMINI_API_KEY
-    GEMINI_API_KEY = api_key
-    os.environ["GEMINI_API_KEY"] = api_key
-    global llm
-    llm = None
-
-
-def get_gemini_llm():
-    global llm
-    if llm is None:
-        from google import genai
-        api_key = GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
-        print(f"get_gemini_llm - API Key: {api_key[:20] if api_key else 'None'}...")
-        if not api_key:
-            print("No API key available")
-            return None
-        try:
-            client = genai.Client(api_key=api_key)
-            llm = client
-            print("Gemini client initialized successfully!")
-            return llm
-        except Exception as e:
-            print(f"Error initializing Gemini: {e}")
-            return None
-    return llm
-
-
-async def process_multimodal_query(message: str, user: str, files: List[Dict[str, Any]]) -> str:
-    from google import genai
-    
-    api_key = os.environ.get("GEMINI_API_KEY") or "YOUR_GEMINI_API_KEY"
-    
-    if user not in conversation_history:
-        conversation_history[user] = []
-    
-    history = conversation_history[user]
-    chat_messages = history[-5:]
-    
-    history_text = ""
-    if chat_messages:
-        history_text = "\n".join([f"User: {m['user']}\nBot: {m['bot']}" for m in chat_messages])
-    
-    extracted_content = ""
-    if files and len(files) > 0:
-        extracted_content = extract_file_content(files)
-    
-    prompt = """You are EduChat, a friendly and helpful AI tutor. Provide CONCISE and MEDIUM-length educational responses.
- """
-    
-    if extracted_content:
-        prompt += f"""
-DOCUMENT CONTENT:
-{extracted_content}
-
-"""
-    
-    if history_text:
-        prompt += f"""CONVERSATION HISTORY:
-{history_text}
-
-"""
-    
-    # If the user message contains its own formatting instructions (e.g. from Summarize Notes),
-    # respect those instead of forcing the default paragraph format.
-    has_format_override = "STRICT REQUIREMENT" in message
-    
-    prompt += f"""User question: {message}
-
-"""
-    if has_format_override:
-        prompt += """Follow the formatting instructions given in the user question EXACTLY. Do not add paragraphs, preambles, introductions, or conversational filler.
-
-Answer:"""
-    else:
-        prompt += """Keep your response:
-- Concise (2-4 paragraphs max)
-- Use bullet points for lists (max 5 items)
-- Include code examples only if essential
-- Skip elaborate headings
-
-Answer:"""
-    
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=[prompt]
-        )
-        answer = response.text
-    except Exception as e:
-        print(f"Gemini API failed: {e}. Attempting fallback to Groq...")
-        try:
-            groq_key = os.environ.get("GROQ_API_KEY", "")
-            if not groq_key:
-                raise ValueError("GROQ_API_KEY not found")
-            answer = await call_groq(prompt, groq_key, "llama-3.3-70b-versatile")
-            print("Successfully used Groq fallback.")
-        except Exception as groq_e:
-            print(f"Groq API fallback failed: {groq_e}. Attempting fallback to OpenRouter...")
-            try:
-                openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
-                if not openrouter_key:
-                    raise ValueError("OPENROUTER_API_KEY not found")
-                answer = await call_openrouter(prompt, openrouter_key, "meta-llama/llama-3.3-70b-instruct")
-                print("Successfully used OpenRouter fallback.")
-            except Exception as or_e:
-                print(f"OpenRouter API fallback failed: {or_e}")
-                answer = "I apologize, but all AI APIs are currently unavailable due to errors or rate limits. Please try again later."
-    
-    history.append({"user": message, "bot": answer})
-    conversation_history[user] = history
-    
-    return answer
-
-
-async def call_groq(prompt: str, api_key: str, model: str) -> str:
-    import httpx
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
-            timeout=60.0
-        )
-        if response.status_code != 200:
-            raise Exception(f"Groq error: {response.status_code} - {response.text}")
-        return response.json()["choices"][0]["message"]["content"]
-
-
-async def call_openrouter(prompt: str, api_key: str, model: str) -> str:
-    import httpx
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://educhat.com", "X-Title": "EduChat"},
-            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
-            timeout=60.0
-        )
-        if response.status_code != 200:
-            raise Exception(f"OpenRouter error: {response.status_code} - {response.text}")
-        return response.json()["choices"][0]["message"]["content"]
-
 
 def extract_file_content(files: List[Dict[str, Any]]) -> str:
     content_parts = []
@@ -224,17 +76,64 @@ def extract_file_content(files: List[Dict[str, Any]]) -> str:
     return "\n".join(content_parts)
 
 
-async def process_text_only(message: str, user: str, groq_llm) -> str:
-    prompt = f"""You are EduChat, an AI tutor specialized in helping students learn.
-User: {user}
+async def process_multimodal_query(message: str, user: str, files: List[Dict[str, Any]]) -> str:
+    api_manager = get_api_manager()
+    
+    if user not in conversation_history:
+        conversation_history[user] = []
+    
+    history = conversation_history[user]
+    chat_messages = history[-5:]
+    
+    history_text = ""
+    if chat_messages:
+        history_text = "\n".join([f"User: {m['user']}\nBot: {m['bot']}" for m in chat_messages])
+    
+    extracted_content = ""
+    if files and len(files) > 0:
+        extracted_content = extract_file_content(files)
+    
+    prompt = """You are EduChat, a friendly and helpful AI tutor. Provide CONCISE and MEDIUM-length educational responses.
+    """
+    
+    if extracted_content:
+        prompt += f"""
+DOCUMENT CONTENT:
+{extracted_content}
 
-User's message: {message}
+"""
+    
+    if history_text:
+        prompt += f"""CONVERSATION HISTORY:
+{history_text}
 
-Provide a helpful, educational response. If appropriate, include examples or explanations to help the student understand the topic better."""
+"""
+    
+    has_format_override = "STRICT REQUIREMENT" in message
+    
+    prompt += f"""User question: {message}
 
-    messages = [HumanMessage(content=prompt)]
-    response = groq_llm.invoke(messages)
-    return response.content
+"""
+    if has_format_override:
+        prompt += """Follow the formatting instructions given in the user question EXACTLY. Do not add paragraphs, preambles, introductions, or conversational filler.
+
+Answer:"""
+    else:
+        prompt += """Keep your response:
+- Concise (2-4 paragraphs max)
+- Use bullet points for lists (max 5 items)
+- Include code examples only if essential
+- Skip elaborate headings
+
+Answer:"""
+    
+    answer = await api_manager.call_with_fallback(prompt, history_text)
+    
+    history.append({"user": message, "bot": answer})
+    conversation_history[user] = history
+    
+    return answer
+
 
 def generate_mock_response(message: str, user: str, files: List[Dict[str, Any]]) -> str:
     message_lower = message.lower()
@@ -349,9 +248,11 @@ def get_encouragement():
     import random
     return random.choice(encouragements)
 
+
 class DocumentProcessor:
     @staticmethod
     def process_text(text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap
