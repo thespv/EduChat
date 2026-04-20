@@ -85,7 +85,7 @@ def init_postgres():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_sessions (
             id SERIAL PRIMARY KEY,
-            user TEXT NOT NULL,
+            "user" TEXT NOT NULL,
             title TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -96,7 +96,7 @@ def init_postgres():
         CREATE TABLE IF NOT EXISTS chat_messages (
             id SERIAL PRIMARY KEY,
             session_id INTEGER NOT NULL,
-            role TEXT NOT NULL,
+            "role" TEXT NOT NULL,
             content TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
@@ -106,7 +106,7 @@ def init_postgres():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS lecture_notes (
             id SERIAL PRIMARY KEY,
-            user TEXT NOT NULL,
+            "user" TEXT NOT NULL,
             name TEXT NOT NULL,
             content TEXT NOT NULL,
             file_type TEXT NOT NULL,
@@ -137,7 +137,7 @@ def create_session_pg(user: str, title: str = "New Chat") -> int:
         return create_session_sqlite(user, title)
     
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO chat_sessions (user, title) VALUES (%s, %s) RETURNING id", (user, title))
+    cursor.execute("INSERT INTO chat_sessions (\"user\", title) VALUES (%s, %s) RETURNING id", (user, title))
     session_id = cursor.fetchone()[0]
     conn.commit()
     cursor.close()
@@ -173,7 +173,7 @@ def get_sessions_pg(user: str) -> list:
     cursor.execute("""
         SELECT id, title, created_at, updated_at 
         FROM chat_sessions 
-        WHERE user = %s 
+        WHERE "user" = %s 
         ORDER BY updated_at DESC
     """, (user,))
     
@@ -210,13 +210,13 @@ def get_session_pg(session_id: int) -> dict:
         return get_session_sqlite(session_id)
     
     cursor = conn.cursor()
-    cursor.execute("SELECT id, user, title, created_at FROM chat_sessions WHERE id = %s", (session_id,))
+    cursor.execute("SELECT id, \"user\", title, created_at FROM chat_sessions WHERE id = %s", (session_id,))
     row = cursor.fetchone()
     if not row:
         cursor.close()
         return None
     
-    cursor.execute("SELECT role, content, created_at FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC", (session_id,))
+    cursor.execute("SELECT \"role\", content, created_at FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC", (session_id,))
     messages = [{"role": m[0], "content": m[1], "created_at": str(m[2])} for m in cursor.fetchall()]
     cursor.close()
     return {"id": row[0], "user": row[1], "title": row[2], "created_at": str(row[3]), "messages": messages}
@@ -242,7 +242,7 @@ def add_message_pg(session_id: int, role: str, content: str):
         return
     
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO chat_messages (session_id, role, content) VALUES (%s, %s, %s)", (session_id, role, content))
+    cursor.execute("INSERT INTO chat_messages (session_id, \"role\", content) VALUES (%s, %s, %s)", (session_id, role, content))
     cursor.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = %s", (session_id,))
     conn.commit()
     cursor.close()
@@ -317,7 +317,7 @@ def save_lecture_note_pg(user: str, name: str, content: str, file_type: str) -> 
         return save_lecture_note_sqlite(user, name, content, file_type)
     
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO lecture_notes (user, name, content, file_type) VALUES (%s, %s, %s, %s) RETURNING id", (user, name, content, file_type))
+    cursor.execute("INSERT INTO lecture_notes (\"user\", name, content, file_type) VALUES (%s, %s, %s, %s) RETURNING id", (user, name, content, file_type))
     note_id = cursor.fetchone()[0]
     conn.commit()
     cursor.close()
@@ -370,7 +370,7 @@ def get_lecture_notes_pg(user: str) -> list:
         return get_lecture_notes_sqlite(user)
     
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, content, file_type, created_at FROM lecture_notes WHERE user = %s ORDER BY created_at DESC", (user,))
+    cursor.execute("SELECT id, name, content, file_type, created_at FROM lecture_notes WHERE \"user\" = %s ORDER BY created_at DESC", (user,))
     notes = [{"id": r[0], "name": r[1], "content": r[2], "file_type": r[3], "created_at": str(r[4])} for r in cursor.fetchall()]
     cursor.close()
     return notes
