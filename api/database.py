@@ -13,6 +13,20 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
 pg_conn = None
 
+def get_pg_connection():
+    global pg_conn
+    if not DATABASE_URL:
+        return None
+    
+    if pg_conn is None:
+        import psycopg2
+        try:
+            pg_conn = psycopg2.connect(DATABASE_URL)
+        except Exception as e:
+            print(f"PostgreSQL connection failed: {e}")
+            return None
+    return pg_conn
+
 def init_db():
     """Initialize database - SQLite for local, PostgreSQL for production"""
     if DATABASE_URL:
@@ -92,7 +106,6 @@ def init_postgres():
             password_hash TEXT NOT NULL,
             name TEXT NOT NULL,
             verified BOOLEAN DEFAULT FALSE,
-            name TEXT NOT NULL,
             verification_token TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )

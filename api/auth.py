@@ -25,6 +25,10 @@ for key in ["GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
+# Check if running locally (no DATABASE_URL = local dev mode)
+def is_local_dev() -> bool:
+    return not os.getenv("DATABASE_URL")
+
 def validate_email(email: str) -> bool:
     """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -126,6 +130,23 @@ async def signup(
     name: str = Form(...)
 ):
     """Register a new user"""
+    # Local dev mode - skip full auth
+    if is_local_dev():
+        if user_exists(email):
+            return {"message": "User already exists (local mode)"}
+        
+        password_hash = hash_password(password)
+        try:
+            user_id = create_user(email, password_hash, name, None)
+        except Exception as e:
+            print(f"User creation failed: {e}")
+            return JSONResponse({"error": "Failed to create user"}, status_code=500)
+        
+        return {
+            "message": "Account created (local mode)",
+            "user_id": user_id
+        }
+    
     # Validate email format
     if not validate_email(email):
         return JSONResponse({"error": "Invalid email format"}, status_code=400)
@@ -175,7 +196,21 @@ async def login(
     if not verify_password(password, user["password_hash"]):
         return JSONResponse({"error": "Invalid email or password"}, status_code=401)
     
-    # Check if verified
+    # Local dev mode - skip verification check
+    if is_local_dev():
+        token = create_token(user["id"], user["email"])
+        session_id = db_create_session(user["id"], "New Chat")
+        return {
+            "token": token,
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "name": user["name"]
+            },
+            "session_id": session_id
+        }
+    
+    # Check if verified (production)
     if not user["verified"]:
         return JSONResponse({"error": "Please verify your email first"}, status_code=401)
     
