@@ -2,10 +2,15 @@ import os
 import httpx
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(env_path)
+
+for key in ["GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]:
+    if not os.getenv(key):
+        os.environ[key] = os.environ.get(key, "")
 
 class APIManager:
     def __init__(self):

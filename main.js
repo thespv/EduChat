@@ -5,10 +5,12 @@ if (!user || !user.name || !user.email) {
 }
 
 function getApiBase() {
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL !== 'http://localhost:8000' && import.meta.env.VITE_API_URL !== '') {
         return import.meta.env.VITE_API_URL;
     }
-    return localStorage.getItem('educhat_api_url') || 'http://localhost:8000';
+    const savedUrl = localStorage.getItem('educhat_api_url');
+    if (savedUrl) return savedUrl;
+    return '';
 }
 
 const API_BASE = getApiBase();

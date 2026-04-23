@@ -3,7 +3,10 @@ import { resolve } from 'path';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const apiUrl = env.VITE_API_URL || 'http://localhost:8000';
+  let apiUrl = env.VITE_API_URL || '';
+  if (!apiUrl || apiUrl === 'http://localhost:8000') {
+    apiUrl = '';
+  }
   
   return {
     root: '.',
