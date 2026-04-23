@@ -4,6 +4,7 @@ from pathlib import Path
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from typing import Optional, List
 from dotenv import load_dotenv
@@ -631,3 +632,8 @@ async def search_documents(
         return {"results": results}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+# Serve static frontend files (for production deployment)
+dist_path = Path(__file__).parent.parent / "dist"
+if dist_path.exists():
+    app.mount("/", StaticFiles(directory=str(dist_path), html=True))

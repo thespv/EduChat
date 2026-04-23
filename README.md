@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Version">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  <!-- <img src="https://img.shields.io/badge/license-MIT-green" alt="License"> -->
   <img src="https://img.shields.io/badge/python-3.10+-orange" alt="Python">
   <img src="https://img.shields.io/badge/fastapi-red" alt="FastAPI">
 </p>
@@ -29,7 +29,7 @@ EduChat is an AI-powered multimodal learning assistant designed for students and
 |-----------|------------|
 | Backend | FastAPI (Python 3.10+) |
 | Database | SQLite / PostgreSQL |
-| AI/ML | LangChain, OpenAI/Groq APIs |
+| AI/ML | LangChain, OpenAI/Gemini APIs |
 | Frontend | Vanilla JavaScript, CSS |
 | Build Tool | Vite |
 
@@ -39,7 +39,7 @@ EduChat is an AI-powered multimodal learning assistant designed for students and
 
 - Python 3.10 or higher
 - Node.js 18+
-- API key (OpenAI or Groq)
+- API key (OpenAI or Gemini)
 
 ### Installation
 
@@ -97,7 +97,7 @@ Create a `.env` file in the root directory:
 
 ```env
 # API Configuration
-GROQ_API_KEY=your_groq_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 
 # Database (optional)
@@ -161,14 +161,11 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment instructions.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
-- AI powered by [Groq](https://groq.com/) and [OpenAI](https://openai.com/)
+- AI powered by [Gemini](https://aistudio.google.com/) and [OpenAI](https://openai.com/)
 - Learning framework by [LangChain](https://langchain.com/)
 
 ---
