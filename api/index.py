@@ -68,22 +68,42 @@ except Exception as e:
 from api.auth import router as auth_router, get_current_user
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request
+import os
+
+# Check if running locally
+DEV_MODE = not os.getenv("DATABASE_URL")
+
+# Override get_current_user for local dev mode
+def get_current_user_safe(request: Request) -> dict:
+    if DEV_MODE:
+        return {"id": 1, "email": "local@dev", "name": "Local User", "verified": True}
+    return get_current_user(request)
+
+# Use the safe version
+get_current_user = get_current_user_safe
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 # Include auth routes
 app.include_router(auth_router)
 
-# Rate limit exceeded handler
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
-        status_code=429,
-        content={"error": "Too many requests. Please try again later."}
-    )
+# Rate limit exceeded handler - only if not in dev mode
+if not DEV_MODE:
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Too many requests. Please try again later."}
+        )
+
+def rate_limit_decorator(func):
+    """Apply rate limiting only in production"""
+    if DEV_MODE:
+        return func
+    return limiter.limit("20/minute")(func)
 
 @app.post("/api/chat")
-@limiter.limit("20/minute")
+@rate_limit_decorator
 async def chat_endpoint(
     request: Request,
     message: str = Form(...),
