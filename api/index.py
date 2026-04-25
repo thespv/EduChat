@@ -65,8 +65,8 @@ try:
 except Exception as e:
     print(f"Error loading services: {e}")
 
-# Import auth router
-from api.auth import router as auth_router, get_current_user
+# Import auth router and get_current_user
+from api.auth import router as auth_router, get_current_user as auth_get_current_user
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 import os
@@ -75,13 +75,10 @@ import os
 DEV_MODE = not os.getenv("DATABASE_URL")
 
 # Override get_current_user for local dev mode
-def get_current_user_safe(request: Request) -> dict:
+def get_current_user(request: Request) -> dict:
     if DEV_MODE:
         return {"id": 1, "email": "local@dev", "name": "Local User", "verified": True}
-    return get_current_user(request)
-
-# Use the safe version
-get_current_user = get_current_user_safe
+    return auth_get_current_user(request)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
