@@ -276,7 +276,7 @@ async def chat_endpoint(
         
         if save_history:
             if not session_id:
-                session_id = create_session(user, message[:30] + "...")
+                session_id = create_session(user["id"], message[:30] + "...")
             add_message(session_id, "user", message)
             add_message(session_id, "bot", result)
         
@@ -312,10 +312,11 @@ async def get_chat_session(request: Request, session_id: int):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/chat/session")
-async def create_chat_session(user: str = Form(...), title: str = Form(default="New Chat")):
+async def create_chat_session(request: Request, title: str = Form(default="New Chat")):
     try:
-        print(f"Creating session for user: {user}, title: {title}")
-        session_id = create_session(user, title)
+        user = get_current_user(request)
+        print(f"Creating session for user_id: {user['id']}, title: {title}")
+        session_id = create_session(user["id"], title)
         print(f"Session created with ID: {session_id}")
         return {"session_id": session_id, "title": title}
     except Exception as e:
@@ -432,9 +433,10 @@ async def extract_pdf(content: str = Form(...), file_type: str = Form(default="p
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/notes")
-async def get_notes(user: str = "User"):
+async def get_notes(request: Request):
     try:
-        notes = get_lecture_notes(user)
+        user = get_current_user(request)
+        notes = get_lecture_notes(user["email"])
         return {"notes": notes}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -575,13 +577,14 @@ async def get_note_content(note_id: int):
 
 @app.post("/api/notes")
 async def save_note(
-    user: str = Form(...),
+    request: Request,
     name: str = Form(...),
     content: str = Form(...),
     file_type: str = Form(...)
 ):
     try:
-        note_id = save_lecture_note(user, name, content, file_type)
+        user = get_current_user(request)
+        note_id = save_lecture_note(user["email"], name, content, file_type)
         return {"success": True, "note_id": note_id}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

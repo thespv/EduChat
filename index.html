@@ -127,6 +127,17 @@
         window.location.href = 'chat.html';
       }
 
+      // Check for email verification success
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('verified') === 'true') {
+        document.getElementById('signin-modal').style.display = 'block';
+        const successDiv = document.createElement('div');
+        successDiv.className = 'success-message';
+        successDiv.textContent = 'Email verified! Please sign in to continue.';
+        successDiv.style.cssText = 'background: #d1fae5; color: #065f46; padding: 12px; border-radius: 6px; margin-bottom: 16px; text-align: center;';
+        document.getElementById('signin-form').insertBefore(successDiv, document.getElementById('signin-form').firstChild);
+      }
+
       // Modal switching
       document.getElementById('switch-to-signup').addEventListener('click', (e) => {
         e.preventDefault();

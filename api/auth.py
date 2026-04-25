@@ -8,7 +8,7 @@ import bcrypt
 import jwt
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pathlib import Path
 
 from api.database import (
@@ -92,8 +92,9 @@ def send_verification_email(email: str, token: str, name: str) -> bool:
     """Send verification email using Resend"""
     resend_api_key = os.getenv("RESEND_API_KEY", "")
     
-    # Print verification link for debugging
-    verification_url = f"https://educhat.onrender.com/api/auth/verify/{token}"
+    # Dynamic verification URL based on environment
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "https://educhat.onrender.com")
+    verification_url = f"{base_url}/api/auth/verify/{token}"
     print(f"=== VERIFICATION EMAIL ===")
     print(f"To: {email}")
     print(f"Verification URL: {verification_url}")
@@ -242,7 +243,8 @@ async def verify_email(token: str):
     """Verify user email"""
     success = verify_user(token)
     if success:
-        return {"message": "Email verified! You can now login."}
+        base_url = os.getenv("RENDER_EXTERNAL_URL", "https://educhat.onrender.com")
+        return RedirectResponse(url=f"{base_url}?verified=true")
     return JSONResponse({"error": "Invalid or expired token"}, status_code=400)
 
 @router.get("/me")

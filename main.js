@@ -295,8 +295,8 @@ async function newChat() {
     try {
         const response = await fetch(API_BASE + '/api/chat/session', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `user=${encodeURIComponent(user.name)}&title=New Chat`
+            headers: getAuthHeaders(),
+            body: `title=New Chat`
         });
         
         const data = await response.json();
@@ -744,7 +744,7 @@ document.getElementById('quick-summarize')?.addEventListener('click', async () =
             messages.forEach(msg => { textToSummarize += msg.textContent + '\n'; });
         } else {
             try {
-                const response = await fetch(API_BASE + '/api/notes?user=' + encodeURIComponent(user.name));
+                const response = await fetch(API_BASE + '/api/notes', { headers: getAuthHeaders() });
                 const data = await response.json();
                 const notes = data.notes || [];
                 if (notes.length === 0) {
@@ -797,7 +797,7 @@ attachFromNotesBtn?.addEventListener('click', async () => {
     let notes = [];
     
     try {
-        const response = await fetch(API_BASE + '/api/notes?user=' + encodeURIComponent(user.name));
+        const response = await fetch(API_BASE + '/api/notes', { headers: getAuthHeaders() });
         const data = await response.json();
         notes = data.notes || [];
     } catch (e) {
@@ -1054,12 +1054,15 @@ function loadLectureNotes() {
                         
                         if (b64Content) {
                             const saveForm = new FormData();
-                            saveForm.append('user', user.name);
                             saveForm.append('name', file.name);
                             saveForm.append('content', b64Content);
                             saveForm.append('file_type', fileType);
                             
-await fetch(API_BASE + '/api/notes', { method: 'POST', body: saveForm });
+                            await fetch(API_BASE + '/api/notes', { 
+                                method: 'POST',
+                                headers: getAuthHeaders(),
+                                body: saveForm 
+                            });
                              showToast('Upload complete! File will be extracted when you view it.', 'success');
                          } else {
                              showToast('Upload failed', 'error');
