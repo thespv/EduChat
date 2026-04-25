@@ -98,6 +98,39 @@ def init_postgres():
     
     cursor = conn.cursor()
     
+    # Check if migration already done
+    try:
+        cursor.execute("SELECT tablename FROM pg_tables WHERE tablename = 'schema_migrations'")
+        migration_done = cursor.fetchone()
+        
+        if not migration_done:
+            # Check if old schema exists and needs migration
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'chat_sessions' AND column_name = 'id'")
+            old_schema = cursor.fetchone()
+            
+            if old_schema:
+                # Old schema exists, drop and recreate
+                print("Migrating database schema...")
+                cursor.execute("DROP TABLE IF EXISTS chat_messages CASCADE")
+                cursor.execute("DROP TABLE IF EXISTS chat_sessions CASCADE")
+                cursor.execute("DROP TABLE IF EXISTS lecture_notes CASCADE")
+                cursor.execute("DROP TABLE IF EXISTS users CASCADE")
+                conn.commit()
+            
+            # Create migration tracking table
+            cursor.execute("""
+                CREATE TABLE schema_migrations (
+                    id SERIAL PRIMARY KEY,
+                    migration_name TEXT NOT NULL,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("INSERT INTO schema_migrations (migration_name) VALUES ('initial_schema')")
+            conn.commit()
+            print("Database migration completed")
+    except Exception as e:
+        print(f"Migration check error (may be first run): {e}")
+    
     # Users table for authentication
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
