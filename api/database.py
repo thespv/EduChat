@@ -185,48 +185,7 @@ def init_postgres():
 # User Authentication Functions
 # ============================================================
 
-def get_session(session_id: int, user_id: int) -> dict:
-    if DATABASE_URL:
-        return get_session_pg(session_id)
-    return get_session_sqlite(session_id)
-
-def get_session_sqlite(session_id: int) -> dict:
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT id, user, title, created_at FROM chat_sessions WHERE id = ?", (session_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
-    
-    cursor.execute("SELECT role, content, created_at FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC", (session_id,))
-    
-    messages = [{"role": m[0], "content": m[1], "created_at": m[2]} for m in cursor.fetchall()]
-    conn.close()
-    return {"id": row[0], "user": row[1], "title": row[2], "created_at": row[3], "messages": messages}
-
-def get_session_pg(session_id: int) -> dict:
-    conn = get_pg_connection()
-    if not conn:
-        return get_session_sqlite(session_id)
-    
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, \"user\", title, created_at FROM chat_sessions WHERE id = %s", (session_id,))
-    row = cursor.fetchone()
-    if not row:
-        cursor.close()
-        return None
-    
-    cursor.execute("SELECT \"role\", content, created_at FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC", (session_id,))
-    messages = [{"role": m[0], "content": m[1], "created_at": str(m[2])} for m in cursor.fetchall()]
-    cursor.close()
-    return {"id": row[0], "user": row[1], "title": row[2], "created_at": str(row[3]), "messages": messages}
-
-def add_message(session_id: int, role: str, content: str):
-    if DATABASE_URL:
-        add_message_pg(session_id, role, content)
-    else:
+def create_user(email: str, password_hash: str, name: str, verification_token: str = None) -> int:
         add_message_sqlite(session_id, role, content)
 
 def add_message_sqlite(session_id: int, role: str, content: str):

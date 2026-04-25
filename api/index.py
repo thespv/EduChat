@@ -273,8 +273,15 @@ async def chat_endpoint(
             result = await process_multimodal_query(message, user_email, processed_files)
         
         if save_history:
+            # Check if session_id is valid, create new if not
+            if session_id:
+                existing_session = get_session(session_id, user["id"])
+                if not existing_session:
+                    session_id = None  # Create new session
+            
             if not session_id:
                 session_id = db_create_session(user["id"], message[:30] + "...")
+            
             add_message(session_id, "user", message)
             add_message(session_id, "bot", result)
         
