@@ -13,7 +13,7 @@ from pathlib import Path
 
 from api.database import (
     create_user, get_user_by_email, get_user_by_id, verify_user, user_exists,
-    JWT_SECRET, create_session as db_create_session, get_sessions
+    JWT_SECRET, create_session as db_create_session
 )
 
 env_path = Path(__file__).parent.parent.parent / ".env"

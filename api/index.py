@@ -277,7 +277,7 @@ async def chat_endpoint(
         
         if save_history:
             if not session_id:
-                session_id = create_session(user["id"], message[:30] + "...")
+                session_id = db_create_session(user["id"], message[:30] + "...")
             add_message(session_id, "user", message)
             add_message(session_id, "bot", result)
         
@@ -296,9 +296,12 @@ async def health_check():
 async def get_chat_history(request: Request):
     try:
         user = get_current_user(request)
-        sessions = get_sessions(user["id"])
+        sessions = db_get_sessions(user["id"])
         return {"sessions": sessions}
     except Exception as e:
+        import traceback
+        print(f"Error in get_chat_history: {e}")
+        print(traceback.format_exc())
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/chat/session/{session_id}")
@@ -317,7 +320,7 @@ async def create_chat_session(request: Request, title: str = Form(default="New C
     try:
         user = get_current_user(request)
         print(f"Creating session for user_id: {user['id']}, title: {title}")
-        session_id = create_session(user["id"], title)
+        session_id = db_create_session(user["id"], title)
         print(f"Session created with ID: {session_id}")
         return {"session_id": session_id, "title": title}
     except Exception as e:
