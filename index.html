@@ -387,7 +387,7 @@
           // Store token and user info
           localStorage.setItem('educhat_token', data.token);
           localStorage.setItem('educhat_user', JSON.stringify(data.user));
-          localStorage.setItem('educhat_session', data.session_id);
+          localStorage.removeItem('educhat_session');
           
           window.location.href = 'chat.html';
           

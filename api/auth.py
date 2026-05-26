@@ -14,7 +14,7 @@ from pathlib import Path
 from api.database import (
     create_user, get_user_by_email, get_user_by_id, verify_user, user_exists,
     update_reset_token, get_user_by_reset_token, update_password,
-    JWT_SECRET, create_session as db_create_session
+    JWT_SECRET
 )
 
 env_path = Path(__file__).parent.parent.parent / ".env"
@@ -200,15 +200,13 @@ async def login(
     # Local dev mode - skip verification check
     if is_local_dev():
         token = create_token(user["id"], user["email"])
-        session_id = db_create_session(user["id"], "New Chat")
         return {
             "token": token,
             "user": {
                 "id": user["id"],
                 "email": user["email"],
                 "name": user["name"]
-            },
-            "session_id": session_id
+            }
         }
     
     # Check if verified (production)
@@ -218,17 +216,13 @@ async def login(
     # Create token
     token = create_token(user["id"], user["email"])
     
-    # Create a default session
-    session_id = db_create_session(user["id"], "New Chat")
-    
     return {
         "token": token,
         "user": {
             "id": user["id"],
             "email": user["email"],
             "name": user["name"]
-        },
-        "session_id": session_id
+        }
     }
 
 @router.get("/verify/{token}")

@@ -1042,6 +1042,12 @@ async function sendMessage() {
         
         if (data.reply) {
             addMessage(data.reply, false);
+
+            if (data.session_id) {
+                currentSessionId = data.session_id;
+                localStorage.setItem('educhat_session', data.session_id);
+            }
+
             if (currentSessionId && message && isNewChat) {
                 const title = generateChatTitle(message);
                 if (title) {
