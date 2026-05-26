@@ -30,7 +30,7 @@ def get_langchain_llm():
     
     try:
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
+            model="gemini-3.5-flash",
             google_api_key=gemini_key,
             temperature=0.7,
             convert_system_message_to_human=True

@@ -103,7 +103,7 @@ class APIManager:
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
                     params={"key": api_key},
                     json={
                         "contents": [{"parts": [{"text": prompt}]}],
