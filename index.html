@@ -248,6 +248,9 @@
             <label for="signin-password">Password</label>
             <input type="password" id="signin-password" required placeholder="Enter your password">
           </div>
+          <div style="text-align: right; margin-bottom: 16px;">
+            <a href="#" id="switch-to-forgot" style="color: #6c63ff; text-decoration: none; font-size: 0.85rem; font-weight: 500;">Forgot Password?</a>
+          </div>
           <button type="submit" class="btn-primary">Sign In</button>
         </form>
         <p class="modal-footer-text">Don't have an account? <a href="#" id="switch-to-signup">Sign Up</a></p>
@@ -281,6 +284,22 @@
         </form>
         <p class="modal-footer-text">Already have an account? <a href="#" id="switch-to-signin">Sign In</a></p>
       </div>
+
+      <!-- Forgot Password Modal (hidden) -->
+      <div class="modal-overlay" id="forgot-modal">
+        <h2>Reset Password</h2>
+        <p class="modal-subtitle">Enter your email to receive a password reset link</p>
+        <div id="forgot-error" class="error-message" style="display: none;"></div>
+        <div id="forgot-success" class="success-message" style="display: none;"></div>
+        <form id="forgot-form">
+          <div class="form-group">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" required placeholder="you@university.edu">
+          </div>
+          <button type="submit" class="btn-primary">Send Reset Link</button>
+        </form>
+        <p class="modal-footer-text">Remember your password? <a href="#" id="switch-to-signin-from-forgot">Sign In</a></p>
+      </div>
     </div>
 
     <script>
@@ -313,6 +332,18 @@
       document.getElementById('switch-to-signin').addEventListener('click', (e) => {
         e.preventDefault();
         document.getElementById('signup-modal').style.display = 'none';
+        document.getElementById('signin-modal').style.display = 'block';
+      });
+
+      document.getElementById('switch-to-forgot').addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('signin-modal').style.display = 'none';
+        document.getElementById('forgot-modal').style.display = 'block';
+      });
+
+      document.getElementById('switch-to-signin-from-forgot').addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('forgot-modal').style.display = 'none';
         document.getElementById('signin-modal').style.display = 'block';
       });
 
@@ -436,6 +467,62 @@
         } finally {
           btn.disabled = false;
           btn.textContent = 'Create Account';
+        }
+      });
+
+      // Forgot Password
+      document.getElementById('forgot-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('forgot-email').value;
+        const errorDiv = document.getElementById('forgot-error');
+        const successDiv = document.getElementById('forgot-success');
+        const btn = e.target.querySelector('button');
+
+        errorDiv.style.display = 'none';
+        successDiv.style.display = 'none';
+
+        if (!email) {
+          errorDiv.textContent = 'Please enter your email';
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+
+        try {
+          const formData = new FormData();
+          formData.append('email', email);
+
+          const response = await fetch(API_BASE + '/api/auth/forgot-password', {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            errorDiv.textContent = data.error || 'Request failed';
+            errorDiv.style.display = 'block';
+            return;
+          }
+
+          successDiv.textContent = 'If that email exists, a reset link has been sent. Please check your inbox.';
+          successDiv.style.display = 'block';
+          document.getElementById('forgot-email').value = '';
+
+          setTimeout(() => {
+            document.getElementById('forgot-modal').style.display = 'none';
+            document.getElementById('signin-modal').style.display = 'block';
+            successDiv.style.display = 'none';
+          }, 4000);
+
+        } catch (err) {
+          errorDiv.textContent = 'Network error. Please try again.';
+          errorDiv.style.display = 'block';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Send Reset Link';
         }
       });
     </script>

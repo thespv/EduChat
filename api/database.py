@@ -60,6 +60,8 @@ def init_sqlite():
             name TEXT NOT NULL,
             verified INTEGER DEFAULT 0,
             verification_token TEXT,
+            reset_token TEXT,
+            reset_token_expiry TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -135,6 +137,8 @@ def init_postgres():
             name TEXT NOT NULL,
             verified BOOLEAN DEFAULT FALSE,
             verification_token TEXT,
+            reset_token TEXT,
+            reset_token_expiry TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -271,6 +275,19 @@ def verify_user(token: str) -> bool:
 
 def user_exists(email: str) -> bool:
     return get_user_by_email(email) is not None
+
+def update_reset_token(email: str, token: str, expiry: str) -> bool:
+    res = execute_query("UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE email = ?", (token, expiry, email))
+    return True
+
+def get_user_by_reset_token(token: str) -> dict:
+    res = execute_query("SELECT id, email, name, reset_token_expiry FROM users WHERE reset_token = ?", (token,), fetchone=True)
+    if not res: return None
+    return {"id": res[0], "email": res[1], "name": res[2], "reset_token_expiry": res[3]}
+
+def update_password(user_id: int, password_hash: str) -> bool:
+    execute_query("UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?", (password_hash, user_id))
+    return True
 
 def create_session(user_id: int, title: str = "New Chat") -> int:
     query = "INSERT INTO chat_sessions (user_id, title) VALUES (?, ?) RETURNING id" if DATABASE_URL else "INSERT INTO chat_sessions (user_id, title) VALUES (?, ?)"
