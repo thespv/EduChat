@@ -102,6 +102,25 @@ def init_sqlite():
     conn.commit()
     conn.close()
 
+    # Migration: add reset_token columns for existing databases
+    try:
+        conn2 = sqlite3.connect(DB_PATH)
+        c2 = conn2.cursor()
+        c2.execute("ALTER TABLE users ADD COLUMN reset_token TEXT")
+        conn2.commit()
+        conn2.close()
+    except Exception:
+        pass
+
+    try:
+        conn2 = sqlite3.connect(DB_PATH)
+        c2 = conn2.cursor()
+        c2.execute("ALTER TABLE users ADD COLUMN reset_token_expiry TIMESTAMP")
+        conn2.commit()
+        conn2.close()
+    except Exception:
+        pass
+
 def init_postgres():
     """Initialize PostgreSQL tables"""
     conn = get_pg_connection()
@@ -178,6 +197,20 @@ def init_postgres():
     """)
     
     conn.commit()
+
+    # Migration: add reset_token columns for existing databases
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT")
+        conn.commit()
+    except Exception as e:
+        print(f"reset_token column migration note: {e}")
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP")
+        conn.commit()
+    except Exception as e:
+        print(f"reset_token_expiry column migration note: {e}")
+
     cursor.close()
 
 # Operation helpers to reduce duplication
